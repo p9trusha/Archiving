@@ -25,5 +25,5 @@ def i_mtf(encode_file_name, decode_file_name):
     decode_file.close()
 
 
-mtf("files/enwik7.txt", "files/mtf.txt")
-i_mtf("files/mtf.txt", "files/i_mtf.txt")
+# mtf("files/enwik7.txt", "files/mtf.txt")
+# i_mtf("files/mtf.txt", "files/i_mtf.txt")

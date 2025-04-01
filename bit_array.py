@@ -15,7 +15,12 @@ class BitArray():
             self.bits = input_data
 
     def __eq__(self, other):
-        return self.bits == other.bits
+        if isinstance(other, BitArray):
+            return self.bits == other.bits
+        if isinstance(other, list):
+            return self.bits == other
+        return False
+
 
     def __getitem__(self, item):
         if isinstance(item, slice):

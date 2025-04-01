@@ -1,9 +1,8 @@
-from math import ceil
+from math import ceil, log2
 
 from bit_array import BitArray
 from bit_array import int_from_binary
 from suffix_array2 import make_suffix_array
-from suffix_array import make_suffix_array
 
 
 # def BWT(name_input_file, name_output_file):
@@ -23,39 +22,47 @@ from suffix_array import make_suffix_array
 #     return S_index
 
 
-def bwt(name_input_file, name_output_file, m):
+def bwt(name_input_file, name_output_file, m, block_size_power=7):
     file_input = open(name_input_file, "rb")
-    s = file_input.read()[:10 ** 5]
+    s = file_input.read()
     file_input.close()
     n = len(s)
+    len_over = 0
     if m % 8 != 0:
         s = BitArray(s, 'b')
-        end = s[len(s) - (len(s) % m):]
+        over = s[len(s) - (len(s) % m):]
     else:
-        len_end = len(s) % (m // 8)
-        end = s[len(s) - len_end:]
-        s = s[:len(s) - len_end]
+        len_over = len(s) % (m // 8)
+        over = s[:len_over]
+        s = s[len_over:]
     file_output = open(name_output_file, mode="wb")
-    file_output.write(len_end.to_bytes())
-    s += s
-    #sa = make_suffix_array(s, m)
-    sa = make_suffix_array(s, m)
-    len_symb = m // 8 if m % 8 == 0 else m
-    bwm = list(filter(lambda x: x < len(sa) // 2, sa))
-    s_index = bwm.index(0)
-    if m % 8 != 0:
-        file_output.write()
-        last_column = BitArray()
-        for i in range(len(bwm)):
-            last_column += s[(bwm[i] - 1) % len(bwm) * len_symb:((bwm[i] - 1) % len(bwm) + 1) * len_symb]
-        last_column += end
-        file_output.write(last_column.to_bytearray())
-    else:
-        for i in range(len(bwm)):
-            file_output.write(s[(bwm[i] - 1) % len(bwm) * len_symb:((bwm[i] - 1) % len(bwm) + 1) * len_symb])
-        file_output.write(end)
+    file_output.write(m.to_bytes())
+    file_output.write(len_over.to_bytes())
+    file_output.write(over)
+    file_output.write(block_size_power.to_bytes())
+    block_size = 10 ** block_size_power
+    for j in range(ceil(len(s) / block_size)):
+        block = s[j * block_size:(j + 1) * block_size]
+        block += block
+        #sa = make_suffix_array(s, m)
+        sa = make_suffix_array(block, m)
+        len_symbol = m // 8 if m % 8 == 0 else m
+        bwm = list(filter(lambda x: x < len(sa) // 2, sa))
+        s_index = bwm.index(0)
+        if m % 8 == 0:
+            len_s_index = ceil(ceil(log2(s_index + 1)) / 8)
+            file_output.write(len_s_index.to_bytes())
+            file_output.write(s_index.to_bytes(length=len_s_index))
+            for j in range(len(bwm)):
+                file_output.write(block[(bwm[j] - 1) % len(bwm) * len_symbol:
+                                        ((bwm[j] - 1) % len(bwm) + 1) * len_symbol])
+        else:
+            last_column = BitArray()
+            for j in range(len(bwm)):
+                last_column += s[(bwm[j] - 1) % len(bwm) * len_symbol:((bwm[j] - 1) % len(bwm) + 1) * len_symbol]
+            last_column += over
+            file_output.write(last_column.to_bytearray())
     file_output.close()
-    return s_index
 
 
 def bwt2(name_input_file, name_output_file):
@@ -81,26 +88,34 @@ def ibwt(last_colum, s_index):
     return s
 
 
-def better_ibwt(s_index, compressed_file_name, decompressed_file_name, m):
-    len_symb = m
-    if m % 8 == 0:
-        len_symb = m // 8
+def better_i_bwt(compressed_file_name, decompressed_file_name):
     compressed_file = open(compressed_file_name, "rb")
-    last_column = compressed_file.read()
-    len_end = last_column[0]
-    end = last_column[len(last_column) - len_end:]
-    print(end)
-    last_column = last_column[1:len(last_column) - len_end]
-    print(len(last_column))
+    m = int_from_binary(compressed_file.read(1))
+    len_symbol = m
+    if m % 8 == 0:
+        len_symbol = m // 8
+    len_over = int_from_binary(compressed_file.read(1))
+    over = compressed_file.read(len_over)
+    block_size_power = int_from_binary(compressed_file.read(1))
+    s = compressed_file.read()
     compressed_file.close()
-    n = len(last_column) // len_symb
-    p_inverse = counting_sort_arg(last_column, m, len_symb)
+    block_size = 10 ** block_size_power
+    i = 0
     decompressed_file = open(decompressed_file_name, "wb")
-    j = s_index
-    for _ in range(n):
-        j = p_inverse[j]
-        decompressed_file.write(last_column[j * len_symb:(j + 1) * len_symb])
-    decompressed_file.write(end)
+    decompressed_file.write(over)
+    while i < len(s):
+        len_s_index = s[i]
+        i += 1
+        s_index = int_from_binary(s[i:i + len_s_index])
+        i += len_s_index
+        last_column = s[i:i + block_size]
+        i += block_size
+        p_inverse = counting_sort_arg(last_column, m, len_symbol)
+        j = s_index
+        n = len(last_column) // len_symbol
+        for _ in range(n):
+            j = p_inverse[j]
+            decompressed_file.write(last_column[j * len_symbol:(j + 1) * len_symbol])
     decompressed_file.close()
 
 

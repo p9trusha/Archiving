@@ -24,8 +24,6 @@ def lz77(name_input_file, name_output_file):
             shift = buffer.rfind(sub_s)
             if shift != -1:
                 break
-        if len(sub_s) == 0:
-            shift = new_buffer_size
         coding_list += BitArray(new_buffer_size - shift, mode="int", length=buffer_size_power)
         coding_list += BitArray(len(sub_s), mode="int", length=string_size_power)
         if i + len(sub_s) >= n:
@@ -66,7 +64,73 @@ def i_lz77(compressed_file_name, decompressed_file_name):
     decompressed_file.close()
 
 
-def lzw(name_input_file, compressed_file_name):
+def lzss(name_input_file, name_output_file, buffer_size_power=15):
+    input_file = open(name_input_file, "rb")
+    s = input_file.read()[:2 ** 17]
+    input_file.close()
+    buffer_size_power = min(buffer_size_power, int(log2(len(s)) - 1))
+    buffer_size = 2 ** buffer_size_power - 1
+    string_size_power = 4
+    string_size = 2 ** string_size_power - 1
+    coding_list = BitArray()
+    n = len(s)
+    i = 0
+    while i < n:
+        buffer = s[max(0,i - buffer_size) : i]
+        new_buffer_size = len(buffer)
+        shift = -1
+        sub_s = b""
+        for j in range(string_size, 3 - 1, -1):
+            sub_s = s[i: min(i + j, n)]
+            shift = buffer.rfind(sub_s)
+            if shift != -1:
+                break
+        if shift == -1:
+            coding_list.append0()
+            coding_list += BitArray(s[i], mode="int", length=8)
+            i += 1
+        else:
+            coding_list.append1()
+            coding_list += BitArray(new_buffer_size - shift, mode="int", length=buffer_size_power)
+            coding_list += BitArray(len(sub_s), mode="int", length=string_size_power)
+            i += len(sub_s)
+    compressed_file = open(name_output_file, "wb")
+    compressed_file.write(buffer_size_power.to_bytes())
+    compressed_file.write(string_size_power.to_bytes())
+    compressed_file.write(coding_list.to_bytearray())
+    compressed_file.close()
+
+
+def i_lzss(compressed_file_name, decompressed_file_name):
+    compressed_file = open(compressed_file_name, "rb")
+    s = compressed_file.read()
+    compressed_file.close()
+    buffer_size_power = s[0]
+    string_size_power = s[1]
+    s = s[2:]
+    s = BitArray(s[1:], 'b')[:len(s) * 8 - s[0]]
+    decompressed_s = bytearray()
+    i = 0
+    while i < len(s):
+        if not s[i]:
+            i += 1
+            decompressed_s += s[i:i + 8].to_bytearray(without_amount_of_extra_bits=True)
+            i += 8
+        else:
+            i += 1
+            shift = int_from_binary(s[i:i + buffer_size_power])
+            i += buffer_size_power
+            length = int_from_binary(s[i:i + string_size_power])
+            i += string_size_power
+            n = len(decompressed_s)
+            decompressed_s += decompressed_s[n - shift:n - shift + length]
+    decompressed_s = decompressed_s[:-1]
+    decompressed_file = open(decompressed_file_name, "wb")
+    decompressed_file.write(decompressed_s)
+    decompressed_file.close()
+
+
+def lzw(name_input_file, compressed_file_name, max_size_dct_power=20):
     input_file = open(name_input_file, "rb")
     s = input_file.read()
     input_file.close()
@@ -75,12 +139,13 @@ def lzw(name_input_file, compressed_file_name):
         dct[i.to_bytes()] = i
     code_list = []
     start_i = 0
+    max_size_dct = 2 ** max_size_dct_power
     while start_i < len(s):
         end_i = start_i + 1
         while s[start_i:end_i] in dct and end_i <= len(s):
             end_i += 1
         end_i -= 1
-        if end_i != len(s):
+        if end_i != len(s) and len(dct) < max_size_dct:
             dct[s[start_i:end_i + 1]] = len(dct)
         code_list.append(dct[s[start_i:end_i]])
         start_i = max(end_i, start_i + 1)
@@ -118,5 +183,6 @@ def i_lzw(compressed_file_name, decompressed_file_name):
         previous = current_str
     decompressed_file.close()
 
-lzw("enwik7.txt", "lzw.txt")
-i_lzw("lzw.txt", "i_lzw.txt")
+
+# lzss("files/enwik7.txt", "files/lzss.txt")
+# i_lzss("files/lzss.txt", "files/i_lzss.txt")
