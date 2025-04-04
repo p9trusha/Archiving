@@ -85,7 +85,7 @@ class BitArray():
     def to_bytearray(self, without_amount_of_extra_bits=False):
         bts = bytearray()
         if not without_amount_of_extra_bits:
-            bts.append(len(self.bits) % 8)
+            bts.append((8 - len(self.bits) % 8) % 8)
         for i in range(0, len(self.bits) // 8):
             byte = 0
             for j in range(8):

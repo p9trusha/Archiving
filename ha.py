@@ -1,6 +1,5 @@
 from collections import defaultdict
-from heapq import heappush, heappop
-from os import write
+from math import ceil
 from queue import PriorityQueue
 
 import numpy
@@ -20,12 +19,11 @@ def prob_estimate(s, m):
 
 def count_symbols(s, m):
     n = len(s)
-    if m % 8 == 0:
-        step = m // 8
-        p = defaultdict(int)
-        for i in range(0, n, step):
-            p[int.from_bytes(s[i:i + step])] += 1
-        return p
+    step = m
+    p = defaultdict(int)
+    for i in range(0, n, step):
+        p[int_from_binary(s[i:i + step])] += 1
+    return p
 
 
 def entropy(s, m):
@@ -49,26 +47,34 @@ class Node():
 
 
 def package_merge(counter_table, max_code_length):
-    max_code_length = max(max_code_length, len(counter_table))
-    items = [(counter_table[key], [key]) for key in counter_table.keys()]
-    items.sort()
-    layer = items.copy()
-    for i in range(1, max_code_length):
-        layer2 = items.copy()
-        j = 0
-        while j + 1 < len(layer):
-            combined_count = layer[j][0] + layer[j + 1][0]
-            combined_symbols = layer[j][1] + layer[j + 1][1]
-            layer2.append((combined_count, combined_symbols))
-            j += 2
-        layer2.sort()
-        layer = layer2
-    lengths = defaultdict(int)
-    for i in range((len(counter_table) - 1) * 2):
-        for key in layer[i][1]:
-            lengths[key] += 1
-    lengths = dict(sorted(lengths.items(), key=lambda item: item[1]))
-    return lengths
+    if len(counter_table) <= 2:
+        lengths = dict()
+        for key in counter_table.keys():
+            lengths[key] = 1
+        return lengths
+    else:
+        max_code_length = max(max_code_length, len(counter_table) - 1)
+        items = [(counter_table[key], [key]) for key in counter_table.keys()]
+        items.sort()
+        layer = items.copy()
+        for i in range(1, max_code_length):
+            layer2 = items.copy()
+            j = 0
+            while j + 1 < len(layer):
+                combined_count = layer[j][0] + layer[j + 1][0]
+                combined_symbols = layer[j][1] + layer[j + 1][1]
+                layer2.append((combined_count, combined_symbols))
+                j += 2
+            layer2.sort()
+            if layer == layer2[:(len(counter_table) - 1) * 2]:
+                break
+            layer = layer2[:(len(counter_table) - 1) * 2]
+        lengths = defaultdict(int)
+        for i in range((len(counter_table) - 1) * 2):
+            for key in layer[i][1]:
+                lengths[key] += 1
+        lengths = dict(sorted(lengths.items(), key=lambda item: item[1]))
+        return lengths
 
 
 def build_huffman_tree(counter_table):
@@ -94,28 +100,40 @@ def build_codebook(root, code="", codebook=None):
     return codebook
 
 
-def huffman(name_input_file, name_output_file, m):
+def ha(name_input_file, name_output_file, m):
     input_file = open(name_input_file, "rb")
     s = input_file.read()
     input_file.close()
-    len_symbol = m // 8 if m % 8 == 0 else m
-    n = len(s)
-    len_over = n % len_symbol
-    n //= len_symbol
+    if m % 8 == 0:
+        len_symbol = m // 8
+    else:
+        len_symbol = m
+        s = BitArray(s, "b")
+    len_over = len(s) % len_symbol
     over = s[:len_over]
     s = s[len_over:]
-    counter_table = count_symbols(s, m)
+    n = len(s) // len_symbol
+    counter_table = count_symbols(s, len_symbol)
     max_code_length = 255
     lengths = package_merge(counter_table, max_code_length)
     codebook = length_to_codes(lengths)
     coded_message = BitArray()
     output_file = open(name_output_file, "wb")
+    output_file.write(m.to_bytes())
     output_file.write(len_over.to_bytes())
-    output_file.write(over)
-    output_file.write(len(codebook).to_bytes(length=len_symbol, byteorder="big"))
+    if m % 8 == 0:
+        output_file.write(over)
+        output_file.write((len(codebook) - 1).to_bytes(length=len_symbol, byteorder="big"))
+    else:
+        output_file.write(over.to_bytearray())
+        coded_message = BitArray(len(codebook) - 1, "int", len_symbol)
     for symbol in lengths.keys():
-        output_file.write(symbol.to_bytes(length=len_symbol, byteorder="big"))
-        output_file.write(lengths[symbol].to_bytes())
+        if m % 8 == 0:
+            output_file.write(symbol.to_bytes(length=len_symbol, byteorder="big"))
+            output_file.write(lengths[symbol].to_bytes())
+        else:
+            coded_message += BitArray(symbol, "int", length=len_symbol)
+            coded_message += BitArray(lengths[symbol], "int", 8)
     for i in range(0, n):
         coded_message += codebook[int_from_binary(s[i * len_symbol:(i + 1) * len_symbol])]
     bytes_string = coded_message.to_bytearray()
@@ -152,47 +170,67 @@ def length_to_codes(symbol_lengths):
     return codes
 
 
-def i_ha(compressed_file_name, decompressed_file_name, m):
+def i_ha(compressed_file_name, decompressed_file_name):
+    compressed_file = open(compressed_file_name, "rb")
+    m = int_from_binary(compressed_file.read(1))
     len_symbol = m
     if m % 8 == 0:
         len_symbol = m // 8
-    compressed_file = open(compressed_file_name, "rb")
-    s = compressed_file.read()
-    len_over = s[0]
-    over = s[1:1 + len_over]
-    len_codebook = int_from_binary(s[1 + len_over:1 + len_over + len_symbol])
-    s_symbol_to_length = s[1 + len_over + len_symbol:
-                           1 + len_over + len_symbol + len_codebook * (len_symbol + 1)]
-    len_over_bits = s[1 + len_over + len_symbol + len_codebook * (len_symbol + 1)]
-    s = BitArray(s[len_over + len_symbol + len_codebook * (len_symbol + 1) + 2:], "b")
-    s = s[:len(s) - len_over_bits]
+    len_over = int.from_bytes(compressed_file.read(1))
+    if m % 8 == 0:
+        over = compressed_file.read(len_over)
+    else:
+        over = compressed_file.read(1 + ceil(len_over / 8))
+        over = BitArray(over, 'b')[len(over) * 8 - len_over:]
+    if m % 8 == 0:
+        len_codebook = int_from_binary(compressed_file.read(len_symbol)) + 1
+        s_symbol_to_length = compressed_file.read(len_codebook * (len_symbol + 1))
+        len_over_bits = int.from_bytes(compressed_file.read(1))
+        s = BitArray(compressed_file.read(), "b")
+        s = s[:len(s) - len_over_bits]
+    else:
+        s = BitArray(compressed_file.read(), "b")
+        len_over_bits, s = int_from_binary(s[:8]), s[8:]
+        len_codebook, s = int_from_binary(s[:len_symbol]) + 1, s[len_symbol:]
+        s_symbol_to_length = s[:len_codebook * (len_symbol + 8)]
+        s = s[len_codebook * (len_symbol + 8):]
+        s = s[:len(s) - len_over_bits]
     compressed_file.close()
     decompressed_file = open(decompressed_file_name, "wb")
-    decompressed_file.write(over)
+    if m % 8 == 0:
+        decompressed_s = bytearray()
+    else:
+        decompressed_s = BitArray()
+    decompressed_s += over
     lengths = {}
     for i in range(len_codebook):
-        lengths[
-            int_from_binary(s_symbol_to_length[(len_symbol + 1) * i:(len_symbol + 1) * i + len_symbol])
-        ] = s_symbol_to_length[(len_symbol + 1) * i + len_symbol]
+        if m % 8 == 0:
+            lengths[
+                int_from_binary(s_symbol_to_length[(len_symbol + 1) * i:
+                                                   (len_symbol + 1) * i + len_symbol])
+            ] = s_symbol_to_length[(len_symbol + 1) * i + len_symbol]
+        else:
+            lengths[
+                int_from_binary(s_symbol_to_length[(len_symbol + 8) * i:
+                                                   (len_symbol + 8) * i + len_symbol])
+            ] = int_from_binary(s_symbol_to_length[(len_symbol + 8) * i + len_symbol:
+                                                   (len_symbol + 8) * i + len_symbol + 8])
     codebook = length_to_codes(lengths)
     i_codebook = {}
     for symbol, code in codebook.items():
         i_codebook[code] = symbol
     start = 0
     end = 0
-    while end < len(s):
+    while end <= len(s):
         code = BitArray(s[start:end], "bit_arr")
         if code in i_codebook.keys():
-            decompressed_file.write(i_codebook[code].to_bytes(length=len_symbol, byteorder="big"))
+            if m % 8 == 0:
+                decompressed_s += i_codebook[code].to_bytes(length=len_symbol, byteorder="big")
+            else:
+                decompressed_s += BitArray(i_codebook[code], "int", len_symbol)
             start = end
         end += 1
+    if m % 8 != 0:
+        decompressed_s = decompressed_s.to_bytearray(without_amount_of_extra_bits=True)
+    decompressed_file.write(decompressed_s)
     decompressed_file.close()
-
-#
-# huffman("files/enwik7.txt", "files/ha.txt", 16)
-# i_ha("files/ha.txt", "files/i_ha.txt", 16)
-# # arr = "aaaaaaa"
-# # # print(prob_estimate(arr))
-# # print(entropy(arr))
-# # print(mtf(arr).encode(encoding="ascii"))
-# print(huffman_algorithm(arr))

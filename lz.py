@@ -66,7 +66,7 @@ def i_lz77(compressed_file_name, decompressed_file_name):
 
 def lzss(name_input_file, name_output_file, buffer_size_power=15):
     input_file = open(name_input_file, "rb")
-    s = input_file.read()[:2 ** 17]
+    s = input_file.read()
     input_file.close()
     buffer_size_power = min(buffer_size_power, int(log2(len(s)) - 1))
     buffer_size = 2 ** buffer_size_power - 1

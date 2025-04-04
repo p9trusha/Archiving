@@ -50,7 +50,7 @@ def bwt(name_input_file, name_output_file, m, block_size_power=7):
         bwm = list(filter(lambda x: x < len(sa) // 2, sa))
         s_index = bwm.index(0)
         if m % 8 == 0:
-            len_s_index = ceil(ceil(log2(s_index + 1)) / 8)
+            len_s_index = ceil(log2(s_index + 1) / 8)
             file_output.write(len_s_index.to_bytes())
             file_output.write(s_index.to_bytes(length=len_s_index))
             for j in range(len(bwm)):
